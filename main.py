@@ -10,7 +10,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
+from pathlib import Path
 # ---------------------------------------------------------------------------
 # Configuración (vía variables de entorno / .env)
 # ---------------------------------------------------------------------------
@@ -31,6 +31,9 @@ DB_USER = os.getenv("DB_USER", "")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "")
 
+SAVE_DATA = os.getenv("SAVE_DATA", False)
+SAVE_DIR = Path("save_data")
+SAVE_DIR.mkdir(exist_ok=True)
 TOPIC = f"application/+/device/+/event/up"
 
 # Perfiles de dispositivo cuyos mensajes procesamos (separados por coma en .env)
@@ -58,6 +61,47 @@ log = logging.getLogger("mqtt_bridge")
 _conn = None
 _device_cache = {}  # nombre (str) -> id (int)
 
+def guardar_datos(datos, device_id, server_received_at):
+    nombre_archivo = f"{device_id}_{server_received_at.strftime('%Y%m%d_%H%M%S')}.json"
+    path = SAVE_DIR / nombre_archivo
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(datos, f, ensure_ascii=False, indent=4)
+
+    return path
+
+def postear_archivos_pendientes(http, endpoint_url):
+    for path in sorted(SAVE_DIR.glob("*.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                datos = json.load(f)
+
+            log.info("Enviando archivo pendiente: %s", path)
+
+            response = http.post(endpoint_url, json=datos, timeout=10)
+
+            if response.ok:
+                log.info("Archivo enviado correctamente, eliminando: %s", path)
+                path.unlink()
+            else:
+                log.warning(
+                    "Error HTTP %s enviando %s: %s",
+                    response.status_code,
+                    path,
+                    response.text,
+                )
+
+                # Si NO es timeout ni problema de internet, se borra
+                path.unlink()
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            log.warning("Sin conexión o timeout enviando %s: %s", path, e)
+            # No borrar archivo
+
+        except Exception as e:
+            log.exception("Error no recuperable con archivo %s: %s", path, e)
+            # Error distinto a timeout/conexión: borrar archivo
+            path.unlink(missing_ok=True)
 
 def get_conn():
     """Devuelve una conexión MariaDB viva, reconectando si es necesario."""
@@ -139,7 +183,13 @@ def on_message(client, userdata, msg):
         if device_profile not in ALLOWED_PROFILES:
             return
 
-        decoded_payload = json.loads(data.get("objectJSON"))
+        object_json = json.loads(data.get("objectJSON", "{}"))
+
+        decoded_payload = (
+            object_json.get("decode")
+            or object_json.get("data")
+            or object_json
+        )
 
         # Parámetros tal como llegan en el payload (sin renombrar).
         parametros = [
@@ -166,14 +216,20 @@ def on_message(client, userdata, msg):
             parametros.append({"parametro": "RSSI", "valor": rx_info[0].get("rssi")})
             parametros.append({"parametro": "SNR", "valor": rx_info[0].get("loRaSNR")})
 
+        server_received_at = datetime.now(CHILE_TZ).isoformat()
         datos = {
-            "server_received_at": datetime.now(CHILE_TZ).isoformat(),
+            "server_received_at": server_received_at,
             "device_id": device_id,
             "parametros": parametros,
         }
+        
+        if SAVE_DATA:
+            guardar_datos(datos, device_id, server_received_at)
+            postear_archivos_pendientes(http, ENDPOINT_URL)
+        else:
+            log.info("Enviando datos: %s", datos)
+            response = http.post(ENDPOINT_URL, json=datos, timeout=10)
         log.info("Enviando datos: %s", datos)
-
-        response = http.post(ENDPOINT_URL, json=datos, timeout=10)
         log.info("Datos enviados: %s", response.status_code)
     except Exception as e:
         log.error("Error al procesar/enviar los datos: %s", e)
