@@ -51,7 +51,7 @@ Dependencias (ver [requirements.txt](requirements.txt)):
 | `requests>=2.31` | Envío HTTP con reintentos |
 | `pytz` | Zona horaria `America/Santiago` |
 | `PyMySQL>=1.1` | Conexión a MariaDB |
-| `python-dotenv>=1.0` | Carga de variables desde `.env` |
+| `PyYAML>=6.0` | Carga de la configuración desde `config.yaml` |
 
 ## Instalación
 
@@ -67,23 +67,69 @@ pip install -r requirements.txt
 
 ## Configuración
 
-La configuración se realiza mediante variables de entorno, que pueden definirse en un archivo `.env` (cargado automáticamente con `python-dotenv`). Copia [.env.example](.env.example) a `.env` y ajusta los valores.
+La configuración se realiza mediante un archivo `config.yaml`. Copia [config.yaml.example](config.yaml.example) a `config.yaml` y ajusta los valores. Por defecto se busca `config.yaml` en el directorio de trabajo; puedes indicar otra ruta con la variable de entorno `CONFIG_FILE`.
 
-| Variable | Por defecto | Descripción |
+| Clave | Por defecto | Descripción |
 |---|---|---|
-| `MQTT_BROKER` | `localhost` | Host del broker MQTT |
-| `MQTT_PORT` | `1883` | Puerto del broker MQTT |
-| `MQTT_USERNAME` | *(vacío)* | Usuario MQTT |
-| `MQTT_PASSWORD` | *(vacío)* | Contraseña MQTT |
-| `ENDPOINT_URL` | `https://apis.maind.cl/api/reading/webhook_dispositivos` | URL del webhook destino |
-| `DB_HOST` | `10.0.3.147` | Host de MariaDB |
-| `DB_PORT` | `3306` | Puerto de MariaDB |
-| `DB_USER` | *(vacío)* | Usuario de la base de datos |
-| `DB_PASSWORD` | *(vacío)* | Contraseña de la base de datos |
-| `DB_NAME` | *(vacío)* | Nombre de la base de datos |
-| `ALLOWED_PROFILES` | `RADIO_LIB,Sense V1,SENSEV2_TEST,REAID MUV V1 - ABP,IRIS_V1_AC` | Perfiles de dispositivo a procesar (separados por coma) |
+| `mqtt.broker` | `localhost` | Host del broker MQTT |
+| `mqtt.port` | `1883` | Puerto del broker MQTT |
+| `mqtt.username` | *(vacío)* | Usuario MQTT |
+| `mqtt.password` | *(vacío)* | Contraseña MQTT |
+| `endpoint.url` | `https://apis.maind.cl/api/reading/webhook_dispositivos` | URL del webhook destino |
+| `device_id_source` | `database` | Origen del `device_id`: `database` (consulta MariaDB) o `config` (usa el mapa `devices`) |
+| `devices` | *(vacío)* | Mapa `nombre: id` usado solo cuando `device_id_source: config` |
+| `database.host` | `10.0.3.147` | Host de MariaDB |
+| `database.port` | `3306` | Puerto de MariaDB |
+| `database.user` | *(vacío)* | Usuario de la base de datos |
+| `database.password` | *(vacío)* | Contraseña de la base de datos |
+| `database.name` | *(vacío)* | Nombre de la base de datos |
+| `allowed_profiles` | `[RADIO_LIB, Sense V1, SENSEV2_TEST, REAID MUV V1 - ABP, IRIS_V1_AC]` | Lista de perfiles de dispositivo a procesar |
+| `save_data` | `false` | Si es `true`, guarda cada mensaje en `save_data/` antes de enviarlo (buffer offline) |
 
-> **Nota:** la variable `APP_IDS` aparece en `.env.example` pero actualmente **no se usa** en el código; la suscripción emplea el comodín `+` para todas las aplicaciones.
+### Origen del `device_id`
+
+El `id` interno del dispositivo puede resolverse de dos formas, según `device_id_source`:
+
+- **`database`** (por defecto): consulta la tabla `dispositivos` de MariaDB por nombre. Requiere la sección `database`.
+- **`config`**: usa el mapa `devices` del propio `config.yaml`, sin necesidad de base de datos. Útil para despliegues pequeños o sin acceso a MariaDB.
+
+```yaml
+device_id_source: config
+devices:
+  sensor-bodega-3: 123
+  sensor-patio-1: 456
+```
+
+En ambos casos, si el nombre del dispositivo no se encuentra, el mensaje se descarta.
+
+Ejemplo de `config.yaml`:
+
+```yaml
+mqtt:
+  broker: localhost
+  port: 1883
+  username: elmet
+  password: cambia_esto
+
+allowed_profiles:
+  - RADIO_LIB
+  - Sense V1
+  - SENSEV2_TEST
+  - REAID MUV V1 - ABP
+  - IRIS_V1_AC
+
+endpoint:
+  url: https://apis.maind.cl/api/reading/webhook_dispositivos
+
+database:
+  host: 10.0.3.147
+  port: 3306
+  user: cambia_esto
+  password: cambia_esto
+  name: cambia_esto
+
+save_data: false
+```
 
 ## Ejecución
 
@@ -103,9 +149,9 @@ Los registros se emiten a la consola en formato:
 
 Todo el servicio reside en [main.py](main.py).
 
-### Configuración (`load_dotenv` y variables globales)
+### Configuración (`load_config` y variables globales)
 
-Carga las variables de entorno y define el tópico de suscripción y el conjunto de perfiles permitidos. El tópico es:
+Carga el archivo `config.yaml` y define el tópico de suscripción y el conjunto de perfiles permitidos. Si el archivo no existe, se registra una advertencia y se usan los valores por defecto. El tópico es:
 
 ```
 application/+/device/+/event/up
@@ -119,7 +165,7 @@ Devuelve una conexión a MariaDB con conexión perezosa (se crea en el primer us
 
 ### `get_device_id(nombre)`
 
-Traduce el nombre del dispositivo a su `id` interno consultando la tabla `dispositivos`. Mantiene una **caché en memoria** (`_device_cache`) para evitar consultas repetidas. Devuelve `None` si el dispositivo no existe.
+Traduce el nombre del dispositivo a su `id` interno. Según `device_id_source` lo resuelve desde el mapa `devices` de `config.yaml` (`config`) o consultando la tabla `dispositivos` de MariaDB (`database`); en este último caso mantiene una **caché en memoria** (`_device_cache`) para evitar consultas repetidas. Devuelve `None` si el dispositivo no existe.
 
 ### `build_http_session()`
 
