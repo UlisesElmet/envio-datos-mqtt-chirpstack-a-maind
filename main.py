@@ -268,9 +268,9 @@ def on_message(client, userdata, msg):
                 }
             )
 
-        server_received_at = datetime.now(CHILE_TZ).isoformat()
+        server_received_at = datetime.now(CHILE_TZ)
         datos = {
-            "server_received_at": server_received_at,
+            "server_received_at": server_received_at.isoformat(),
             "device_id": device_id,
             "parametros": parametros,
         }
@@ -289,8 +289,7 @@ def on_message(client, userdata, msg):
         else:
             log.info("Enviando datos: %s", datos)
             response = http.post(ENDPOINT_URL, json=datos, timeout=10)
-        log.info("Enviando datos: %s", datos)
-        log.info("Datos enviados: %s", response.status_code)
+            log.info("Datos enviados: %s", response.status_code)
     except Exception as e:
         log.error("Error al procesar/enviar los datos: %s", e)
 
