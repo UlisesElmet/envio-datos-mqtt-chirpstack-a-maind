@@ -222,8 +222,6 @@ def on_message(client, userdata, msg):
             device_info.get("deviceProfileName")
             or data.get("deviceProfileName")
         )
-        if device_profile not in ALLOWED_PROFILES:
-            return
 
         # v4 entrega el payload decodificado en "object" (ya es un dict);
         # v3 lo entrega en "objectJSON" (string JSON).
@@ -236,6 +234,44 @@ def on_message(client, userdata, msg):
             or object_json.get("data")
             or object_json
         )
+
+        # ACK de comandos (p. ej. REAID SWITCH V1): el dispositivo confirma un
+        # comando con ACK/command_name/command_value. Se publica retenido en
+        # {device_id}/ack y no se envía al endpoint.
+        ack = decoded_payload.get("ACK", data.get("ACK"))
+        if ack is not None:
+            device_name = device_info.get("deviceName") or data.get("deviceName")
+            device_id = get_device_id(device_name)
+            if device_id is None:
+                log.warning(
+                    "Dispositivo '%s' no encontrado; se omite el ACK.",
+                    device_name,
+                )
+                return
+
+            command_name = decoded_payload.get(
+                "command_name", data.get("command_name")
+            )
+            command_value = decoded_payload.get(
+                "command_value", data.get("command_value")
+            )
+            ack_payload = {
+                "server_received_at": datetime.now(CHILE_TZ).isoformat(),
+                "ACK": ack,
+            }
+            if command_name is not None:
+                ack_payload[str(command_name)] = command_value
+
+            client.publish(
+                f"{device_id}/ack",
+                json.dumps(ack_payload, ensure_ascii=False),
+                retain=True,
+            )
+            log.info("ACK publicado en %s/ack: %s", device_id, ack_payload)
+            return
+
+        if device_profile not in ALLOWED_PROFILES:
+            return
 
         # Parámetros tal como llegan en el payload (sin renombrar).
         parametros = [
