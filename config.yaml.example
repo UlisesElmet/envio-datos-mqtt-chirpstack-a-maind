@@ -20,7 +20,9 @@ endpoint:
 # Origen del id de dispositivo:
 #   database -> consulta la tabla 'dispositivos' en MariaDB (usa la sección database)
 #   config   -> usa el mapa 'devices' definido más abajo (no requiere base de datos)
-device_id_source: database
+# OPCIONAL: si se omite, se decide solo con prioridad BD > config (hay
+# sección `database` con host -> database; si no -> config).
+# device_id_source: database
 
 # Mapa nombre de dispositivo -> id. Solo se usa si device_id_source: config
 devices:

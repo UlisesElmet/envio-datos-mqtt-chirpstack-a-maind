@@ -63,8 +63,11 @@ SAVE_DIR.mkdir(exist_ok=True)
 TOPIC = f"application/+/device/+/event/up"
 
 # Origen del id de dispositivo: "database" (consulta a MariaDB) o "config"
-# (mapa nombre -> id definido en config.yaml).
-DEVICE_ID_SOURCE = (config.get("device_id_source") or "database").strip().lower()
+# (mapa nombre -> id definido en config.yaml). Si no se declara, se decide
+# solo con prioridad BD > config: hay bloque `database` con host -> database;
+# si no -> config.
+_default_source = "database" if db_cfg.get("host") else "config"
+DEVICE_ID_SOURCE = (config.get("device_id_source") or _default_source).strip().lower()
 
 # Mapa nombre de dispositivo -> id, usado cuando DEVICE_ID_SOURCE == "config".
 DEVICES_MAP = {
