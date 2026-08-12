@@ -136,8 +136,11 @@ def base_modbus_driver(c):
     base = {
         "site": c.get("site", {}),
         "URLs": {
-            "ar_api_url": f"{api}/api/reading/webhook_ar",
-            "hvac_api_url": f"{api}/api/reading/webhook_hvac",
+            # Webhook UNIFICADO: la API recibe AR y HVAC en el mismo endpoint
+            # (webhook_dispositivos, el mismo que usan mqtt-bridge y
+            # health-check). Antes eran webhook_ar / webhook_hvac separados.
+            "ar_api_url": f"{api}/api/reading/webhook_dispositivos",
+            "hvac_api_url": f"{api}/api/reading/webhook_dispositivos",
             "schedule_log_url": f"{api}/api/scheduler/webhook/log",
             "set_ocupado_url": f"{api}/api/hvac/set-ocupado",
         },
