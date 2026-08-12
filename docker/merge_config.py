@@ -116,7 +116,11 @@ def base_mqtt_bridge(c):
             "password": mqtt.get("password", ""),
         },
         "endpoint": {"url": f"{api}/api/reading/webhook_dispositivos"},
-        "save_data": False,
+        # Buffer-and-forward en disco: cada payload se guarda antes de postear
+        # y se borra al confirmar; si no hay internet queda pendiente y se
+        # reenvía solo. En /data para que sobreviva recreaciones (volumen).
+        "save_data": True,
+        "save_dir": "/data/save_data",
     }
     db = _db_block(c.get("database"))
     if db:

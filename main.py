@@ -58,8 +58,12 @@ DB_PASSWORD = db_cfg.get("password", "")
 DB_NAME = db_cfg.get("name", "")
 
 SAVE_DATA = config.get("save_data", False)
-SAVE_DIR = Path("save_data")
-SAVE_DIR.mkdir(exist_ok=True)
+# Carpeta del buffer de envío. Configurable con `save_dir`: en Docker el
+# merge la apunta a /data/save_data (volumen persistente: los pendientes
+# sobreviven recreaciones del contenedor); sin config queda el clásico
+# ./save_data relativo (modo nativo).
+SAVE_DIR = Path(config.get("save_dir", "save_data"))
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
 TOPIC = f"application/+/device/+/event/up"
 
 # Origen del id de dispositivo: "database" (consulta a MariaDB) o "config"
