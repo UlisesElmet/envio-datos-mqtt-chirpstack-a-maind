@@ -268,7 +268,6 @@ def on_message(client, userdata, msg):
                 retain=True,
             )
             log.info("ACK publicado en %s/ack: %s", device_id, ack_payload)
-            return
 
         if device_profile not in ALLOWED_PROFILES:
             return
